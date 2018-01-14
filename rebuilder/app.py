@@ -1,4 +1,5 @@
 import datetime
+import os
 import re
 from typing import AbstractSet, Mapping, Optional, Tuple
 import urllib.request
@@ -214,3 +215,10 @@ def restart_job(job_id: int, token: str) -> Mapping[str, object]:
     with urllib.request.urlopen(request) as response:
         assert response.headers['Content-Type'].strip() == 'application/json'
         return json.load(response)
+
+
+if os.environ.get('REBUILDER_DATABASE_URL'):
+    app.config.setdefault(
+        'DATABASE_URL',
+        os.environ['REBUILDER_DATABASE_URL'].strip()
+    )
