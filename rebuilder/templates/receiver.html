@@ -1,7 +1,11 @@
 {% extends 'layout.html' %}
 
 {% block body %}
-  <p>A new webhook receiver was just created:</p>
+  <h2>Webhook receiver</h2>
+
+  {% if not logs %}
+    <p>A new webhook receiver was just created:</p>
+  {% endif %}
 
   <p><tt>{{ receiver_url }}</tt></p>
 
@@ -10,4 +14,16 @@
       target="_blank">github.com/{{- receiver.repo_slug }}</a> repository:</p>
 
   <pre><code>{{ example_code }}</code></pre>
+
+  {% if logs %}
+    <h3>Restarted builds<h3>
+
+    {% for log in logs %}
+      <div class="log" id="log-{{ log.build_id }}">
+        <pre><code>
+          {{- log.received_payload|tojson(indent=2, sort_keys=true) -}}
+        </code></pre>
+      </div>
+    {% endfor %}
+  {% endif %}
 {% endblock %}

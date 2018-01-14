@@ -136,7 +136,12 @@ def show_receiver(id: uuid.UUID):
         'receiver.html',
         receiver_url=receiver_url,
         receiver=receiver,
-        example_code=dump(example_conf)
+        example_code=dump(example_conf),
+        logs=sorted(
+            receiver.restarts,
+            key=lambda log: log.created_at,
+            reverse=True
+        )
     )
 
 
