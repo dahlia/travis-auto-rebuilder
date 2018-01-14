@@ -1,0 +1,47 @@
+{% extends 'layout.html' %}
+
+{% block body %}
+  {{ super() }}
+
+  <p>
+    Not sure how to use? Read the
+    <a href="https://github.com/dahlia/travis-auto-rebuilder#readme">docs</a>
+    first.
+  </p>
+
+  <form action="{{ url_for('.create_receiver') }}" method="post">
+    <div>
+      <label>
+        Repo slug
+        <input type="text" name="repo-slug" required
+          pattern="^[a-z0-9](-?[a-z0-9])*/[a-z0-9._-]{1,100}$"
+          placeholder="(e.g., dahlia/travis-auto-rebuilder)">
+      </label>
+    </div>
+    <div>
+      <label>
+        Token
+        <input type="text" name="token" required spellcheck="false">
+      </label>
+    </div>
+    <div>
+      <label>
+        Max retries
+        <input type="number" name="max-retries"
+          min="1" max="5" required value="3">
+      </label>
+    </div>
+    <div>
+      <label>
+        Job numbers
+        <input type="text" name="job-numbers"
+          pattern="^ *,? *([1-9][0-9]*)( *, *[1-9][0-9]*)* *,? *$"
+          spellcheck="false"
+          placeholder="(e.g., 1,2,3)">
+      </label>
+    </div>
+    <div>
+      <button type="submit">Create a new receiver</button>
+    </div>
+  </form>
+{% endblock %}

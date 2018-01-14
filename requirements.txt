@@ -1,0 +1,7 @@
+Flask >= 0.12.2, < 0.13
+iso8601 >= 0.1.12, < 0.2.0
+PyYAML >= 3.12, < 3.13
+SQLAlchemy >= 1.2.0, < 1.3.0
+SQLAlchemy-Utc >= 0.9.0, < 1.0.0
+SQLAlchemy-Utils >= 0.32.21, < 0.33.0
+Werkzeug >= 0.14.1, < 0.15

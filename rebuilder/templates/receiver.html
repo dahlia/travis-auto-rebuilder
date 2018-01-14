@@ -1,0 +1,13 @@
+{% extends 'layout.html' %}
+
+{% block body %}
+  <p>A new webhook receiver was just created:</p>
+
+  <p><tt>{{ receiver_url }}</tt></p>
+
+  <p>Add the following configuration into the .travis.yaml file of
+    <a href="https://github.com/{{ receiver.repo_slug }}"
+      target="_blank">github.com/{{- receiver.repo_slug }}</a> repository:</p>
+
+  <pre><code>{{ example_code }}</code></pre>
+{% endblock %}
