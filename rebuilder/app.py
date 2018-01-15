@@ -16,6 +16,7 @@ from flask import (Flask, current_app, g, json, jsonify, redirect,
 from iso8601 import parse_date
 from sqlalchemy.engine import Engine, create_engine
 from werkzeug.exceptions import BadRequest, NotFound
+from werkzeug.wrappers import BaseResponse
 from yaml import dump
 
 from .orm import Base, Session
@@ -153,6 +154,10 @@ def show_receiver(id: uuid.UUID):
 
 @app.route('/<uuid:id>/', methods=['POST'])
 def receive(id: uuid.UUID):
+    def respond(result: str, code: int=200, **kwargs) -> BaseResponse:
+        r = jsonify(result=result, **kwargs)
+        r.status_code = code
+        return r
     session: Session = get_session()
     receiver: Receiver = get_receiver(id)
     job_numbers, retries = get_receiver_params()
@@ -161,17 +166,17 @@ def receive(id: uuid.UUID):
     try:
         signature = base64.b64decode(request.headers['Signature'])
     except KeyError:
-        return jsonify(result='missing_signature')
+        return respond('missing_signature', 400)
     except (ValueError, TypeError):
-        return jsonify(result='invalid_signature')
+        return respond('invalid_signature', 400)
     if not verify_signature(payload_text.encode('utf-8'),
                             signature,
                             public_key):
-        return jsonify(result='signature_verification_failure')
+        return respond('signature_verification_failure', 400)
     payload = json.loads(payload_text)
     repo_slug = '{owner_name}/{name}'.format(**payload['repository'])
     if repo_slug != receiver.repo_slug:
-        return jsonify(result='unmatched_repo_slug')
+        return respond('unmatched_repo_slug', 400)
     jobs = payload['matrix']
     if job_numbers is not None:
         jobs = [
@@ -181,13 +186,13 @@ def receive(id: uuid.UUID):
         ]
     failed_jobs = [j for j in jobs if j['state'] != 'passed']
     if not failed_jobs:
-        return jsonify(result='jobs_passed')
+        return respond('jobs_passed')
     build_id = payload['id']
     prev_logs = session.query(Restart) \
         .filter_by(receiver=receiver, build_id=build_id) \
         .count()
     if prev_logs >= retries:
-        return jsonify(result='too_many_retries')
+        return respond('too_many_retries', 429)
     log = Restart(
         receiver=receiver,
         received_payload=payload,
@@ -211,7 +216,7 @@ def receive(id: uuid.UUID):
         except urllib.error.HTTPError as e:
             session.rollback()
             if e.code == 403:
-                return jsonify(result='invalid_token')
+                return respond('invalid_token', 403)
             raise
         restarted_jobs.append(restarted_job)
     session.commit()
@@ -220,7 +225,7 @@ def receive(id: uuid.UUID):
     a_day_ago = now - datetime.timedelta(days=1)
     session.query(Restart).filter(Restart.created_at < a_day_ago).delete()
     session.commit()
-    return jsonify(result='jobs_restarted', restarted_jobs=restarted_jobs)
+    return respond('jobs_restarted', restarted_jobs=restarted_jobs, code=202)
 
 
 SIGNING_HASH_ALGORITHM = SHA1()
