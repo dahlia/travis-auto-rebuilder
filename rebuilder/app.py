@@ -1,3 +1,4 @@
+import base64
 import datetime
 import os
 import re
@@ -5,6 +6,11 @@ from typing import AbstractSet, Mapping, Optional, Tuple
 import urllib.request
 import uuid
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric.padding import PKCS1v15
+from cryptography.hazmat.primitives.hashes import SHA1
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from flask import (Flask, current_app, g, json, jsonify, redirect,
                    render_template, request, url_for)
 from iso8601 import parse_date
@@ -151,8 +157,17 @@ def receive(id: uuid.UUID):
     receiver: Receiver = get_receiver(id)
     job_numbers, retries = get_receiver_params()
     payload_text: str = request.form['payload']
-    # FIXME: validate signature
-    # https://docs.travis-ci.com/user/notifications/#Verifying-Webhook-requests
+    public_key: bytes = get_travis_public_key()
+    try:
+        signature = base64.b64decode(request.headers['Signature'])
+    except KeyError:
+        return jsonify(result='missing_signature')
+    except (ValueError, TypeError):
+        return jsonify(result='invalid_signature')
+    if not verify_signature(payload_text.encode('utf-8'),
+                            signature,
+                            public_key):
+        return jsonify(result='signature_verification_failure')
     payload = json.loads(payload_text)
     repo_slug = '{owner_name}/{name}'.format(**payload['repository'])
     if repo_slug != receiver.repo_slug:
@@ -206,6 +221,37 @@ def receive(id: uuid.UUID):
     session.query(Restart).filter(Restart.created_at < a_day_ago).delete()
     session.commit()
     return jsonify(result='jobs_restarted', restarted_jobs=restarted_jobs)
+
+
+SIGNING_HASH_ALGORITHM = SHA1()
+SIGNING_PADDING = PKCS1v15()
+
+
+def verify_signature(payload: bytes,
+                     signature: bytes,
+                     public_key_pem: bytes) -> bool:
+    pubkey = load_pem_public_key(public_key_pem, backend=default_backend())
+    try:
+        pubkey.verify(
+            signature,
+            payload,
+            SIGNING_PADDING,
+            SIGNING_HASH_ALGORITHM
+        )
+    except InvalidSignature:
+        current_app.logger.info('verify_signature(%r, %r, %r) failed.',
+                                payload, signature, public_key_pem)
+        return False
+    return True
+
+
+def get_travis_public_key():
+    if not hasattr(g, 'travis_public_key'):
+        with urllib.request.urlopen('https://api.travis-ci.org/config') as r:
+            config = json.load(r)
+        pem = config['config']['notifications']['webhook']['public_key']
+        g.travis_public_key = pem.encode('ascii')
+    return g.travis_public_key
 
 
 def restart_job(job_id: int, token: str) -> Mapping[str, object]:
