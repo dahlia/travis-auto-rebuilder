@@ -32,7 +32,9 @@ used it before, you need to install it and login:
 
 **Max retries** means what it says.  It's disallowed to be greater than 5.
 
-There's an optional field as well: **job numbers**.  If you want a receiver to
+There are two optional fields as well: **job numbers** and **subject to**.
+
+**Job numbers**: If you want a receiver to
 be sensitive to only some jobs and ignore other jobs, fill this field with
 comma-separated numbers.  Each number means an index number appeared after a
 period from a job number, e.g., 4 from 123.4 (where 123 is a build number).
@@ -40,6 +42,11 @@ Suppose if you've filled it with ``1,2``, then it won't automatically restart
 a build (suppose its number is 123) unless its job 123.1 or 123.2 fails.
 Leave this empty if you want every build to be automatically restarted
 when any job in the build fails.
+
+**Subject to**: If particular jobs are obviously deterministic so that we can
+ensure that the whole build shouldn't be automatically retried when these
+deterministic jobs fail, fill this field with the these deterministic job
+numbers.  The format is the same to the **job numbers** field.
 
 Fill the form and then click the submit button.  It will show a url of
 the new webhook receiver you've just made.

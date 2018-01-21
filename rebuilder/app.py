@@ -55,6 +55,21 @@ def home():
     return render_template('home.html')
 
 
+def parse_job_numbers(string: str, label: str):
+    try:
+        job_numbers = {int(n.strip()) for n in string.split(',') if n.strip()}
+    except ValueError:
+        raise BadRequest(
+            f'The {label} field: '
+            'Every element of job numbers must be a number.'
+        )
+    if any(n < 1 for n in job_numbers):
+        raise BadRequest(
+            f'The {label} field: A job number cannot be less than 1.'
+        )
+    return job_numbers
+
+
 @app.route('/', methods=['POST'])
 def create_receiver():
     def get(d, key: str) -> str:
@@ -71,21 +86,20 @@ def create_receiver():
             f'Missing required field: {e.args[0].replace("-", " ")}.'
         )
     job_numbers = request.form.get('job-numbers', '').strip()
+    subject_to = request.form.get('subject-to', '').strip()
     try:
         max_retries = int(max_retries)
     except ValueError:
         raise BadRequest('Max retries must be a natural number.')
     if not (1 <= max_retries <= 5):
         raise BadRequest('Max retries must be greater than 0 and less than 6.')
-    try:
-        job_numbers = {
-            int(n.strip())
-            for n in job_numbers.split(',') if n.strip()
-        }
-    except ValueError:
-        raise BadRequest('Every element of job numbers must be a number.')
-    if any(n < 1 for n in job_numbers):
-        raise BadRequest('A job number cannot be less than 1.')
+    job_numbers = parse_job_numbers(job_numbers, 'job numbers')
+    subject_to = parse_job_numbers(subject_to, 'subject to')
+    if job_numbers & subject_to:
+        raise BadRequest(
+            'The jobs specified by "job numbers" field and "subject to" field '
+            'cannot be overlapped.'
+        )
     session: Session = get_session()
     receiver = Receiver(repo_slug=repo_slug, token=token)
     session.add(receiver)
@@ -109,26 +123,34 @@ def get_receiver(id: uuid.UUID) -> Receiver:
     return receiver
 
 
-def get_receiver_params() -> Tuple[Optional[AbstractSet[int]], int]:
+def get_receiver_params() -> Tuple[
+    Optional[AbstractSet[int]],
+    Optional[AbstractSet[int]],
+    int
+]:
     try:
         jobs = frozenset(map(int, request.args['jobs'].split()))
     except (KeyError, ValueError):
         jobs = None
+    try:
+        subject_to = frozenset(map(int, request.args['subject-to'].split()))
+    except (KeyError, ValueError):
+        subject_to = frozenset()
     retries = request.args.get('retries', type=int, default=1)
-    return jobs, max(min(retries, 5), 1)
+    return jobs - subject_to or None, subject_to, max(min(retries, 5), 1)
 
 
 @app.route('/<uuid:id>/')
 def show_receiver(id: uuid.UUID):
     receiver: Receiver = get_receiver(id)
-    jobs, retries = get_receiver_params()
-    receiver_url = url_for(
-        '.receive',
-        id=id,
-        jobs=jobs and ' '.join(map(str, sorted(jobs))),
-        retries=retries,
-        _external=True
-    )
+    jobs, subject_to, retries = get_receiver_params()
+    receiver_url = url_for('.receive', _external=True, **{
+        'id': id,
+        'jobs': jobs and ' '.join(map(str, sorted(jobs))),
+        'subject-to':
+            ' '.join(map(str, sorted(subject_to))) if subject_to else None,
+        'retries': retries,
+    })
     example_conf = {
         'notifications': {
             'webhooks': {
@@ -160,7 +182,7 @@ def receive(id: uuid.UUID):
         return r
     session: Session = get_session()
     receiver: Receiver = get_receiver(id)
-    job_numbers, retries = get_receiver_params()
+    job_numbers, subject_to, retries = get_receiver_params()
     payload_text: str = request.form['payload']
     public_key: bytes = get_travis_public_key()
     try:
@@ -177,16 +199,21 @@ def receive(id: uuid.UUID):
     repo_slug = '{owner_name}/{name}'.format(**payload['repository'])
     if repo_slug != receiver.repo_slug:
         return respond('unmatched_repo_slug', 400)
-    jobs = payload['matrix']
-    if job_numbers is not None:
+    all_jobs = payload['matrix']
+    if job_numbers is None:
+        jobs = list(all_jobs)
+    else:
         jobs = [
             job
-            for job in jobs
+            for job in all_jobs
             if int(job['number'].split('.')[-1]) in job_numbers
         ]
     failed_jobs = [j for j in jobs if j['state'] != 'passed']
     if not failed_jobs:
         return respond('jobs_passed')
+    elif (subject_to is not None and
+          not all(j['state'] == 'passed' for j in subject_to)):
+        return respond('jobs_failed')
     build_id = payload['id']
     prev_logs = session.query(Restart) \
         .filter_by(receiver=receiver, build_id=build_id) \
